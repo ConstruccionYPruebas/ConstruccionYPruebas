@@ -9,17 +9,19 @@ permissions:
   pull-requests: read
 
 jobs:
-  sonar:
+  test-and-analyze:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
 
-      # Sonar necesita un JDK en el runner
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+
+      - name: Build & test (creates JaCoCo XML)
+        run: mvn -B -DskipTests=false clean verify
 
       - name: SonarCloud scan
         uses: SonarSource/sonarqube-scan-action@v4
@@ -30,5 +32,8 @@ jobs:
             -Dsonar.host.url=https://sonarcloud.io
             -Dsonar.organization=construccionypruebas
             -Dsonar.projectKey=ConstruccionYPruebas_ConstruccionYPruebas
-            -Dsonar.sources=.
-            -Dsonar.verbose=true
+            -Dsonar.sources=src/main/java
+            -Dsonar.tests=src/test/java
+            -Dsonar.java.binaries=target/classes
+            -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
+            -Dsonar.qualitygate.wait=true
