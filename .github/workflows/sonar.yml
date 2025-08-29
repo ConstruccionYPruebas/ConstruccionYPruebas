@@ -23,6 +23,21 @@ jobs:
       - name: Build & test (creates JaCoCo XML)
         run: mvn -B -DskipTests=false clean verify
 
+      - name: Set SonarCloud New Code baseline (one-time)
+        run: |
+          # Set the baseline date
+          curl -s -u "${{ secrets.SONAR_TOKEN }}:" -X POST \
+            -d "component=ConstruccionYPruebas_ConstruccionYPruebas" \
+            -d "key=sonar.leak.period" \
+            -d "value=2025-08-28" \
+            https://sonarcloud.io/api/settings/set
+          # Tell Sonar the type is a date
+          curl -s -u "${{ secrets.SONAR_TOKEN }}:" -X POST \
+            -d "component=ConstruccionYPruebas_ConstruccionYPruebas" \
+            -d "key=sonar.leak.period.type" \
+            -d "value=date" \
+            https://sonarcloud.io/api/settings/set
+
       - name: SonarCloud scan
         uses: SonarSource/sonarqube-scan-action@v4
         env:
