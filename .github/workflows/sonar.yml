@@ -1,0 +1,17 @@
+name: SonarCloud
+on:
+  push: { branches: [ "main", "master" ] }
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  sonar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: SonarCloud scan
+        uses: SonarSource/sonarqube-scan-action@v4
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          # (No SONAR_HOST_URL needed on SonarCloud)
