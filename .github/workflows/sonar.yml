@@ -1,4 +1,4 @@
-name: SonarCloud
+name: Build + SonarCloud + Report
 on:
   push: { branches: [ "main", "master" ] }
   pull_request:
@@ -23,21 +23,6 @@ jobs:
       - name: Build & test (creates JaCoCo XML)
         run: mvn -B -DskipTests=false clean verify
 
-      - name: Set SonarCloud New Code baseline (one-time)
-        run: |
-          # Set the baseline date
-          curl -s -u "${{ secrets.SONAR_TOKEN }}:" -X POST \
-            -d "component=ConstruccionYPruebas_ConstruccionYPruebas" \
-            -d "key=sonar.leak.period" \
-            -d "value=2025-08-28" \
-            https://sonarcloud.io/api/settings/set
-          # Tell Sonar the type is a date
-          curl -s -u "${{ secrets.SONAR_TOKEN }}:" -X POST \
-            -d "component=ConstruccionYPruebas_ConstruccionYPruebas" \
-            -d "key=sonar.leak.period.type" \
-            -d "value=date" \
-            https://sonarcloud.io/api/settings/set
-
       - name: SonarCloud scan
         uses: SonarSource/sonarqube-scan-action@v4
         env:
@@ -51,41 +36,51 @@ jobs:
             -Dsonar.tests=src/test/java
             -Dsonar.java.binaries=target/classes
             -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
-            -Dsonar.qualitygate.wait=false
+            -Dsonar.junit.reportPaths=target/surefire-reports
+            -Dsonar.qualitygate.wait=true
 
-      - name: Generar informe SonarCloud (metrics + issues)
+      # Ensure these run even if the gate fails
+      - name: Install jq
+        if: always()
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Generate SonarCloud report (metrics + issues)
+        if: always()
+        env:
+          PROJECT: ConstruccionYPruebas_ConstruccionYPruebas
         run: |
-          PROJECT=ConstruccionYPruebas_ConstruccionYPruebas
-
-          # 1) Métricas clave (coverage, bugs, vulns, code smells, duplicación)
+          # 1) Key metrics
           curl -s -u "${{ secrets.SONAR_TOKEN }}:" \
-            "https://sonarcloud.io/api/measures/component?component=${PROJECT}&metricKeys=coverage,bugs,vulnerabilities,code_smells,duplicated_lines_density" \
+            "https://sonarcloud.io/api/measures/component?component=$PROJECT&metricKeys=coverage,bugs,vulnerabilities,code_smells,duplicated_lines_density" \
             > measures.json
 
-          # 2) Issues priorizados (BLOCKER/CRITICAL/MAJOR)
+          # 2) Prioritized issues (BLOCKER/CRITICAL/MAJOR)
           curl -s -u "${{ secrets.SONAR_TOKEN }}:" \
-            "https://sonarcloud.io/api/issues/search?componentKeys=${PROJECT}&types=BUG,VULNERABILITY,CODE_SMELL&severities=BLOCKER,CRITICAL,MAJOR&ps=500" \
+            "https://sonarcloud.io/api/issues/search?componentKeys=$PROJECT&types=BUG,VULNERABILITY,CODE_SMELL&severities=BLOCKER,CRITICAL,MAJOR&ps=500" \
             > issues.json
 
-          # 3) Markdown con métricas
-          COVERAGE=$(jq -r '.component.measures[] | select(.metric=="coverage") | .value' measures.json)
-          BUGS=$(jq -r '.component.measures[] | select(.metric=="bugs") | .value' measures.json)
-          VULNS=$(jq -r '.component.measures[] | select(.metric=="vulnerabilities") | .value' measures.json)
-          SMELLS=$(jq -r '.component.measures[] | select(.metric=="code_smells") | .value' measures.json)
-          DUPL=$(jq -r '.component.measures[] | select(.metric=="duplicated_lines_density") | .value' measures.json)
+          # Safeguards so files are never empty
+          [ -s measures.json ] || echo '{"component":{"measures":[]}}' > measures.json
+          [ -s issues.json ] || echo '{"issues":[]}' > issues.json
+
+          COVERAGE=$(jq -r '.component.measures[] | select(.metric=="coverage") | .value // "0.0"' measures.json)
+          BUGS=$(jq -r '.component.measures[] | select(.metric=="bugs") | .value // "0"' measures.json)
+          VULNS=$(jq -r '.component.measures[] | select(.metric=="vulnerabilities") | .value // "0"' measures.json)
+          SMELLS=$(jq -r '.component.measures[] | select(.metric=="code_smells") | .value // "0"' measures.json)
+          DUPL=$(jq -r '.component.measures[] | select(.metric=="duplicated_lines_density") | .value // "0.0"' measures.json)
 
           {
             echo "# Informe SonarCloud"
-            echo ""
+            echo
             echo "## Métricas clave"
             echo "- **Coverage**: ${COVERAGE}%"
             echo "- **Bugs**: ${BUGS}"
             echo "- **Vulnerabilities**: ${VULNS}"
             echo "- **Code Smells**: ${SMELLS}"
             echo "- **Duplicated lines (%)**: ${DUPL}"
-            echo ""
+            echo
             echo "## Hallazgos priorizados (BLOCKER/CRITICAL/MAJOR)"
-            echo ""
+            echo
             echo "| Type | Severity | File | Line | Message |"
             echo "|------|----------|------|------|---------|"
             jq -r '
@@ -96,21 +91,29 @@ jobs:
                 )
               | .[]
               | "| \(.type) | \(.severity) | \(.component) | \((.line//"")) | \((.message|gsub("\\n"; " "))) |"
-            ' issues.json
+            ' issues.json || true
           } > sonar-report.md
 
-          # 4) CSV opcional de issues
+          # Also show in the run Summary
+          cat sonar-report.md >> "$GITHUB_STEP_SUMMARY"
+
+          # CSV export
           jq -r '
             ["type","severity","rule","file","line","message"],
             (.issues[] | [ .type, .severity, .rule, .component, (.line//""), (.message|gsub("\\n"; " ")) ])
             | @csv
           ' issues.json > issues.csv
-      - name: Subir artefactos de reporte
+
+      - name: Upload report artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: sonar-report
           path: |
             sonar-report.md
             measures.json
+            issues.json
+            issues.csv
+
             issues.json
             issues.csv
