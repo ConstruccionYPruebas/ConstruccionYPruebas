@@ -52,3 +52,65 @@ jobs:
             -Dsonar.java.binaries=target/classes
             -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
             -Dsonar.qualitygate.wait=false
+
+      - name: Generar informe SonarCloud (metrics + issues)
+        run: |
+          PROJECT=ConstruccionYPruebas_ConstruccionYPruebas
+
+          # 1) Métricas clave (coverage, bugs, vulns, code smells, duplicación)
+          curl -s -u "${{ secrets.SONAR_TOKEN }}:" \
+            "https://sonarcloud.io/api/measures/component?component=${PROJECT}&metricKeys=coverage,bugs,vulnerabilities,code_smells,duplicated_lines_density" \
+            > measures.json
+
+          # 2) Issues priorizados (BLOCKER/CRITICAL/MAJOR)
+          curl -s -u "${{ secrets.SONAR_TOKEN }}:" \
+            "https://sonarcloud.io/api/issues/search?componentKeys=${PROJECT}&types=BUG,VULNERABILITY,CODE_SMELL&severities=BLOCKER,CRITICAL,MAJOR&ps=500" \
+            > issues.json
+
+          # 3) Markdown con métricas
+          COVERAGE=$(jq -r '.component.measures[] | select(.metric=="coverage") | .value' measures.json)
+          BUGS=$(jq -r '.component.measures[] | select(.metric=="bugs") | .value' measures.json)
+          VULNS=$(jq -r '.component.measures[] | select(.metric=="vulnerabilities") | .value' measures.json)
+          SMELLS=$(jq -r '.component.measures[] | select(.metric=="code_smells") | .value' measures.json)
+          DUPL=$(jq -r '.component.measures[] | select(.metric=="duplicated_lines_density") | .value' measures.json)
+
+          {
+            echo "# Informe SonarCloud"
+            echo ""
+            echo "## Métricas clave"
+            echo "- **Coverage**: ${COVERAGE}%"
+            echo "- **Bugs**: ${BUGS}"
+            echo "- **Vulnerabilities**: ${VULNS}"
+            echo "- **Code Smells**: ${SMELLS}"
+            echo "- **Duplicated lines (%)**: ${DUPL}"
+            echo ""
+            echo "## Hallazgos priorizados (BLOCKER/CRITICAL/MAJOR)"
+            echo ""
+            echo "| Type | Severity | File | Line | Message |"
+            echo "|------|----------|------|------|---------|"
+            jq -r '
+              .issues
+              | sort_by(
+                  ( .severity | if .=="BLOCKER" then 0 elif .=="CRITICAL" then 1 elif .=="MAJOR" then 2 elif .=="MINOR" then 3 else 4 end ),
+                  .type
+                )
+              | .[]
+              | "| \(.type) | \(.severity) | \(.component) | \((.line//"")) | \((.message|gsub("\\n"; " "))) |"
+            ' issues.json
+          } > sonar-report.md
+
+          # 4) CSV opcional de issues
+          jq -r '
+            ["type","severity","rule","file","line","message"],
+            (.issues[] | [ .type, .severity, .rule, .component, (.line//""), (.message|gsub("\\n"; " ")) ])
+            | @csv
+          ' issues.json > issues.csv
+      - name: Subir artefactos de reporte
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonar-report
+          path: |
+            sonar-report.md
+            measures.json
+            issues.json
+            issues.csv
