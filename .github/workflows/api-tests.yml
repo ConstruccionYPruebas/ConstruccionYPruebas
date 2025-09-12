@@ -1,0 +1,91 @@
+name: API Tests (Postman/Newman)
+on:
+  push: { branches: [ "main", "master" ] }
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  api-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Java 17 for compiling/running the single-file server
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Compile API
+        run: javac Api.java
+
+      - name: Start API server
+        run: |
+          nohup java --add-modules jdk.httpserver Api > server.log 2>&1 &
+          # wait until it's up
+          for i in {1..30}; do
+            if curl -fsS http://localhost:8080/fib?n=1 >/dev/null; then
+              echo "Server is up"; break
+            fi
+            sleep 1
+          done
+
+      # Newman (Postman CLI) to run the API tests
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Newman
+        run: npm install -g newman newman-reporter-htmlextra
+
+      - name: Write Postman collection & env
+        run: |
+          mkdir -p postman
+          cat > postman/collection.json <<'JSON'
+          {
+            "info": { "name": "ConstruccionYPruebas API Tests", "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json" },
+            "item": [
+              {
+                "name": "Fibonacci OK (n=10 -> 55)",
+                "request": { "method": "GET", "url": "{{baseUrl}}/fib", "query": [{ "key": "n", "value": "10" }] },
+                "event": [{ "listen": "test", "script": { "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('n=10, value=55', () => { pm.expect(json.n).to.eql(10); pm.expect(json.value).to.eql(55); });"
+                ], "type": "text/javascript" }}]
+              },
+              {
+                "name": "Fibonacci Bad Request (n<0)",
+                "request": { "method": "GET", "url": "{{baseUrl}}/fib", "query": [{ "key": "n", "value": "-1" }] },
+                "event": [{ "listen": "test", "script": { "exec": [
+                  "pm.test('status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('error message present', () => pm.expect(pm.response.json().error).to.match(/n must be >= 0/i));"
+                ], "type": "text/javascript" }}]
+              },
+              {
+                "name": "Multiply OK (6*7 -> 42)",
+                "request": { "method": "GET", "url": "{{baseUrl}}/multiply", "query": [
+                  { "key": "a", "value": "6" }, { "key": "b", "value": "7" }
+                ]},
+                "event": [{ "listen": "test", "script": { "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('product 42', () => pm.expect(pm.response.json().product).to.eql(42));"
+                ], "type": "text/javascript" }}]
+              }
+            ]
+          }
+          JSON
+          cat > postman/env.json <<'JSON'
+          { "name": "Localhost 8080", "values": [
+              { "key": "baseUrl", "value": "http://localhost:8080", "enabled": true }
+            ], "_postman_variable_scope": "environment" }
+          JSON
+
+      - name: Run Newman
+        run: |
+          newman run postman/collection.json \
+            -e postman/env.json \
+            -r cli,htmlextra \
+            --reporter-htmlextra-export postman/newman-report.html
+
+      - name:
