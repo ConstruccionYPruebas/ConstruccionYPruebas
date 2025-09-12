@@ -117,11 +117,9 @@ jobs:
         if: always()
         run: |
           set +e
-          echo "Node version:"; node -v
-          echo "NPM version:"; npm -v
-          echo "Newman in PATH?"; which newman || echo "not found"
+          echo "Node:"; node -v
+          echo "NPM:"; npm -v
 
-          # Use npx to avoid PATH issues with global installs
           npx -y newman run postman/collection.json \
             -e postman/env.json \
             -r cli,htmlextra \
@@ -129,23 +127,12 @@ jobs:
           status=$?
           echo "Newman exit code: $status"
 
-          # Guarantee an artifact even if Newman failed
+          # Fallback minimal HTML if reporter didn't create one
           if [ ! -f postman/newman-report.html ]; then
             mkdir -p postman
-            cat > postman/newman-report.html <<HTML
-            <html><body>
-              <h1>Newman did not produce a report (exit $status)</h1>
-              <p>See the job logs above for details. Common causes:</p>
-              <ul>
-                <li>Collection or env JSON path wrong</li>
-                <li>Server not reachable from runner</li>
-                <li>Tests failed and reporter crashed</li>
-              </ul>
-            </body></html>
-            HTML
+            printf '%s\n' '<html><body><h1>No report generated</h1><p>Newman exit code: '"$status"'</p></body></html>' > postman/newman-report.html
           fi
 
-          # Don’t fail the job here; artifact upload comes next
           exit 0
 
       - name: Attach logs to summary
