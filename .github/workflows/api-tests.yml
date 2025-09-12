@@ -29,15 +29,15 @@ jobs:
           set -e
           nohup java --add-modules jdk.httpserver Api > server.log 2>&1 &
           echo $! > server.pid
-          # Espera hasta 30s a que levante
+          # Wait until /fib (without params) returns 400 = context is registered
           for i in {1..30}; do
-            if curl -fsS http://127.0.0.1:8080/fib?n=1 >/dev/null; then
-              echo "Server is up"
-              exit 0
+            code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8080/fib)
+            if [ "$code" = "400" ]; then
+              echo "Server is up and /fib context is registered"; exit 0
             fi
             sleep 1
           done
-          echo "::error::Server did not start on port 8080"
+          echo "::error::Server did not expose /fib on port 8080 (last code: $code)"
           echo "---- First 200 lines of server.log ----"
           sed -n '1,200p' server.log || true
           exit 1
