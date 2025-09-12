@@ -55,6 +55,11 @@ public class Api {
             } catch (NumberFormatException e) { send(ex, 400, err("invalid long in 'a' or 'b'")); }
         });
 
+        server.createContext("/", ex -> {
+    String body = "{\"status\":\"ok\",\"endpoints\":[\"/fib\",\"/multiply\"]}";
+    send(ex, 200, body);
+});
+        
         server.setExecutor(null);
         System.out.println("API ready at http://localhost:"+port+"  (endpoints: /fib, /multiply)");
         server.start();
@@ -81,3 +86,4 @@ public class Api {
         try(OutputStream os = ex.getResponseBody()){ os.write(bytes); }
     }
 }
+
