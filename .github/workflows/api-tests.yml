@@ -114,7 +114,7 @@ jobs:
           if [ -f postman/newman-report.html ]; then
             echo "Newman HTML report will be uploaded as artifact." >> $GITHUB_STEP_SUMMARY
           fi
-
+          
       - name: Upload artifacts (report + server log)
         if: always()
         uses: actions/upload-artifact@v4
