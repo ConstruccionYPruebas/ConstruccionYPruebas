@@ -1,8 +1,12 @@
 name: API Tests (Postman/Newman)
 on:
-  push: { branches: [ "main", "master" ] }
-  pull_request:
-    types: [opened, synchronize, reopened]
+  push:
+    branches: [ "main" ]
+    paths:
+      - "Api.java"
+      - ".github/workflows/api-tests.yml"
+      - "postman/**"
+  workflow_dispatch: {}
 
 jobs:
   api-tests:
