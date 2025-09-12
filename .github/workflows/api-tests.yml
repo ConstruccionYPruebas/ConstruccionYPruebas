@@ -88,4 +88,8 @@ jobs:
             -r cli,htmlextra \
             --reporter-htmlextra-export postman/newman-report.html
 
-      - name:
+      - name: Upload API test report
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-test-report
+          path: postman/newman-report.html
