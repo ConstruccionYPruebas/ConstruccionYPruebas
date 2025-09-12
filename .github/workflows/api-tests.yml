@@ -29,14 +29,20 @@ jobs:
           set -e
           nohup java --add-modules jdk.httpserver Api > server.log 2>&1 &
           echo $! > server.pid
-          # Wait until /fib (without params) returns 400 = context is registered
+
+          # Wait until /fib (NO trailing slash) returns 400 (means the context exists)
           for i in {1..30}; do
-            code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8080/fib)
+            code=$(curl -s -o resp.txt -w "%{http_code}" http://127.0.0.1:8080/fib)
             if [ "$code" = "400" ]; then
-              echo "Server is up and /fib context is registered"; exit 0
+              echo "Server is up and /fib context is registered"
+              rm -f resp.txt
+              exit 0
             fi
+            echo "Probe got HTTP $code; body:"
+            cat resp.txt || true
             sleep 1
           done
+
           echo "::error::Server did not expose /fib on port 8080 (last code: $code)"
           echo "---- First 200 lines of server.log ----"
           sed -n '1,200p' server.log || true
