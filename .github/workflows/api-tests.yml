@@ -10,27 +10,38 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Java 17 for compiling/running the single-file server
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Compile API
-        run: javac Api.java
+      - name: Compile API (single file)
+        run: |
+          set -e
+          if [ ! -f Api.java ]; then
+            echo "::error file=Api.java::Api.java no existe en la raíz del repo"
+            exit 1
+          fi
+          javac Api.java
 
       - name: Start API server
         run: |
+          set -e
           nohup java --add-modules jdk.httpserver Api > server.log 2>&1 &
-          # wait until it's up
+          echo $! > server.pid
+          # Espera hasta 30s a que levante
           for i in {1..30}; do
-            if curl -fsS http://localhost:8080/fib?n=1 >/dev/null; then
-              echo "Server is up"; break
+            if curl -fsS http://127.0.0.1:8080/fib?n=1 >/dev/null; then
+              echo "Server is up"
+              exit 0
             fi
             sleep 1
           done
+          echo "::error::Server did not start on port 8080"
+          echo "---- First 200 lines of server.log ----"
+          sed -n '1,200p' server.log || true
+          exit 1
 
-      # Newman (Postman CLI) to run the API tests
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -83,13 +94,27 @@ jobs:
 
       - name: Run Newman
         run: |
+          set -e
           newman run postman/collection.json \
             -e postman/env.json \
             -r cli,htmlextra \
             --reporter-htmlextra-export postman/newman-report.html
 
-      - name: Upload API test report
+      - name: Attach logs to summary
+        if: always()
+        run: |
+          echo "## Server log (last 200 lines)" >> $GITHUB_STEP_SUMMARY
+          (tail -n 200 server.log || true) >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f postman/newman-report.html ]; then
+            echo "Newman HTML report will be uploaded as artifact." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload artifacts (report + server log)
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: api-test-report
-          path: postman/newman-report.html
+          path: |
+            postman/newman-report.html
+            server.log
