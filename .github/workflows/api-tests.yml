@@ -28,24 +28,26 @@ jobs:
           fi
           javac Api.java
 
-- name: Start API server
-  run: |
-    set -e
-    nohup java --add-modules jdk.httpserver Api > server.log 2>&1 &
-    echo $! > server.pid
-    # Wait until "/" returns 200 (means the server is up and contexts are loaded)
-    for i in {1..30}; do
-      code=$(curl -s -o resp.txt -w "%{http_code}" http://127.0.0.1:8080/)
-      if [ "$code" = "200" ]; then
-        echo "Server is up"; rm -f resp.txt; exit 0
-      fi
-      echo "Probe got HTTP $code; body:"; cat resp.txt || true
-      sleep 1
-    done
-    echo "::error::Server did not respond 200 on /"
-    echo "---- First 200 lines of server.log ----"
-    sed -n '1,200p' server.log || true
-    exit 1
+      - name: Start API server
+        run: |
+          set -e
+          nohup java --add-modules jdk.httpserver Api > server.log 2>&1 &
+          echo $! > server.pid
+          # Wait until /fib (without params) returns 400 → context exists
+          for i in {1..30}; do
+            code=$(curl -s -o resp.txt -w "%{http_code}" http://127.0.0.1:8080/fib)
+            if [ "$code" = "400" ]; then
+              echo "Server is up and /fib context is registered"
+              rm -f resp.txt
+              exit 0
+            fi
+            echo "Probe got HTTP $code; body:"; cat resp.txt || true
+            sleep 1
+          done
+          echo "::error::Server did not expose /fib on port 8080 (last code: $code)"
+          echo "---- First 200 lines of server.log ----"
+          sed -n '1,200p' server.log || true
+          exit 1
 
       - uses: actions/setup-node@v4
         with:
@@ -114,7 +116,7 @@ jobs:
           if [ -f postman/newman-report.html ]; then
             echo "Newman HTML report will be uploaded as artifact." >> $GITHUB_STEP_SUMMARY
           fi
-          
+
       - name: Upload artifacts (report + server log)
         if: always()
         uses: actions/upload-artifact@v4
