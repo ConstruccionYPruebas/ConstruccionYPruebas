@@ -79,7 +79,7 @@ jobs:
             "item": [
               {
                 "name": "Fibonacci OK (n=10 -> 55)",
-                "request": { "method": "GET", "url": "{{baseUrl}}/fib", "query": [{ "key": "n", "value": "10" }] },
+                "request": { "method": "GET", "url": "{{baseUrl}}/fib?n=10" },
                 "event": [{ "listen": "test", "script": { "exec": [
                   "pm.test('status 200', () => pm.response.to.have.status(200));",
                   "const json = pm.response.json();",
@@ -88,7 +88,7 @@ jobs:
               },
               {
                 "name": "Fibonacci Bad Request (n<0)",
-                "request": { "method": "GET", "url": "{{baseUrl}}/fib", "query": [{ "key": "n", "value": "-1" }] },
+                "request": { "method": "GET", "url": "{{baseUrl}}/fib?n=-1" },
                 "event": [{ "listen": "test", "script": { "exec": [
                   "pm.test('status 400', () => pm.response.to.have.status(400));",
                   "pm.test('error message present', () => pm.expect(pm.response.json().error).to.match(/n must be >= 0/i));"
@@ -96,9 +96,7 @@ jobs:
               },
               {
                 "name": "Multiply OK (6*7 -> 42)",
-                "request": { "method": "GET", "url": "{{baseUrl}}/multiply", "query": [
-                  { "key": "a", "value": "6" }, { "key": "b", "value": "7" }
-                ]},
+                "request": { "method": "GET", "url": "{{baseUrl}}/multiply?a=6&b=7" },
                 "event": [{ "listen": "test", "script": { "exec": [
                   "pm.test('status 200', () => pm.response.to.have.status(200));",
                   "pm.test('product 42', () => pm.expect(pm.response.json().product).to.eql(42));"
@@ -107,6 +105,8 @@ jobs:
             ]
           }
           JSON
+
+          # adjust port here if you changed Api.java to 8081
           cat > postman/env.json <<'JSON'
           { "name": "Localhost 8080", "values": [
               { "key": "baseUrl", "value": "http://localhost:8080", "enabled": true }
