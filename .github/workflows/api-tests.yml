@@ -28,26 +28,40 @@ jobs:
           fi
           javac Api.java
 
-      - name: Start API server
+      - name: Start API server (robust probe)
         run: |
           set -e
           nohup java --add-modules jdk.httpserver Api > server.log 2>&1 &
           echo $! > server.pid
-          # Wait until /fib (without params) returns 400 → context exists
-          for i in {1..30}; do
-            code=$(curl -s -o resp.txt -w "%{http_code}" http://127.0.0.1:8080/fib)
+
+          # Give JVM a moment
+          sleep 1
+
+          # Try for up to ~40s; don't fail on curl errors
+          code=000
+          for i in {1..40}; do
+            code=$(curl -sS -o resp.txt -w "%{http_code}" http://127.0.0.1:8080/fib || echo "000")
             if [ "$code" = "400" ]; then
               echo "Server is up and /fib context is registered"
               rm -f resp.txt
-              exit 0
+              break
             fi
-            echo "Probe got HTTP $code; body:"; cat resp.txt || true
+            echo "Probe $i: HTTP $code"
             sleep 1
           done
-          echo "::error::Server did not expose /fib on port 8080 (last code: $code)"
+
+          # Always print some server log to help debugging
           echo "---- First 200 lines of server.log ----"
           sed -n '1,200p' server.log || true
-          exit 1
+          {
+            echo "## server.log (first 200 lines)"
+            sed -n '1,200p' server.log || true
+          } >> $GITHUB_STEP_SUMMARY
+
+          if [ "$code" != "400" ]; then
+            echo "::error::Server did not expose /fib (expected 400). Last code: $code"
+            exit 1
+          fi
 
       - uses: actions/setup-node@v4
         with:
